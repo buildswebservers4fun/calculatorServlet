@@ -22,25 +22,126 @@ if (System.getenv("CI_BUILD_TAG") != null) {
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
-// In this section you declare where to find the dependencies of your project
 repositories {
-    // Use 'jcenter' for resolving your dependencies.
-    // You can declare any Maven/Ivy/file repository here.
-    jcenter()
+    maven {
+        url "https://maven.csse.rose-hulman.edu/artifactory/libs-release"
+    }
 }
-
-// In this section you declare the dependencies for your production and test code
 dependencies {
-    // The production code uses the SLF4J logging API at compile time
-    compile 'org.slf4j:slf4j-api:1.7.21'
+    testCompile group: 'junit', name: 'junit', version: '4.11'
 
-    // Declare the dependency for your favourite test framework you want to use in your tests.
-    // TestNG is also supported by the Gradle Test task. Just change the
-    // testCompile dependency to testCompile 'org.testng:testng:6.8.1' and add
-    // 'test.useTestNG()' to your build script.
-    testCompile 'junit:junit:4.12'
+    compile(group: 'edu.rosehulman.csse477.buildswebservers4fun', name: 'webserver3000', version: '1.2.+')
+    compile(group: 'com.google.code.gson', name: 'gson', version: '2.5')
 }
 
+jar {
+    manifest {
+        attributes "Implementation-Title": "calculatorServlet",
+                "Implementation-Version": "${version}",
+                "Main-Class": "${mainClassName}"
+    }
+    baseName = 'calculatorServlet'
+
+    //from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: "file://${buildDir}/repo")
+        }
+    }
+}
+
+task packageSources(type: Jar, dependsOn: 'classes') {
+    from sourceSets.main.allSource
+    classifier = 'sources'
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifact packageSources
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            credentials {
+                username System.getenv('MAVEN_USER')
+                password System.getenv('MAVEN_PASSWORD')
+            }
+            url "https://maven.csse.rose-hulman.edu/artifactory/student-release-local"
+        }
+    }
+}
+
+// Code coverage analyzer
+jacoco {
+    toolVersion = "0.7.+"
+}
+
+jacocoTestReport {
+    group = "Reporting"
+    description = "Generate Jacoco coverage reports after running tests."
+    additionalSourceDirs = files(sourceSets.main.allJava.srcDirs)
+
+    reports {
+        xml.enabled true
+        csv.enabled false
+        html.enabled true
+    }
+}
+
+test {
+    jacoco {
+        append = false
+    }
+}
+
+test.finalizedBy(jacocoTestReport)
+
+task codeCoverageInfo (dependsOn: jacocoTestReport) {
+    ext.srcFile = file("${reportsDir}/jacoco/test/jacocoTestReport.xml")
+    doLast {
+        println "Transforming source file."
+
+        def parser = new XmlParser()
+        parser.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false);
+        parser.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        parser.setFeature("http://xml.org/sax/features/namespaces", false)
+
+        def reportNode = parser.parse(srcFile)
+        reportNode.children().each {
+            if(it.name() == 'counter') {
+                String type = it.@type
+                float missed = it.@missed as float
+                float covered = it.@covered as float
+                float percentage = covered / (missed + covered) * 100
+                println "Code Coverage[$type]: $percentage%"
+            }
+        }
+    }
+}
+jacocoTestReport.finalizedBy(codeCoverageInfo)
+
+// SSH Publishing
+ssh.settings { knownHosts = allowAnyHosts }
+remotes {
+    prod {
+        host = '477-38.csse.rose-hulman.edu'
+        user = System.getenv('SSH_USER')
+        password = System.getenv('SSH_PASSWORD')
+    }
+    test {
+        host = '477-33.csse.rose-hulman.edu'
+        user = System.getenv('SSH_USER')
+        password = System.getenv('SSH_PASSWORD')
+    }
+}
 
 task publishToTest(dependsOn: jar) << {
     ssh.run {
@@ -62,6 +163,32 @@ task publishToTest(dependsOn: jar) << {
             execute('cp /tmp/calculatorPlugin/* /home/csse/webserver/plugins', pty: true)
             println "Done! Clearing the tmp folder ..."
             execute('rm -rf /tmp/calculatorPlugin')
+            println "All done!"
+        }
+    }
+}
+
+
+task publishToProd(dependsOn: jar) << {
+    ssh.run {
+        session(remotes.prod) {
+            println "Checking if remote /tmp/calculatorPlugin exists ..."
+            def result = execute('if test -d /tmp/calculatorPlugin; then echo "exists"; fi')
+            if(result != "exists") {
+                println("Remote /tmp/calculatorPlugin does not exist, creating a new one...")
+                execute('mkdir -p /tmp/calculatorPlugin')
+                println("Remote /tmp/calculatorPlugin created!")
+            }
+            println "Transfering file from local build/distributions to remote /tmp/calculatorPlugin ..."
+            put from: "${buildDir}/libs/calculatorServlet-${version}.jar", into: '/tmp/calculatorPlugin'
+            println "Removing old versions of plugin"
+            try {
+                remove '/home/csse/webserver/plugins/calculatorServlet-*.jar'
+            } catch(Exception) {}
+            println "Copying data from the temp folder to the plugin folder ..."
+            execute('cp /tmp/userPlugin/* /home/csse/webserver/plugins', pty: true)
+            println "Done! Clearing the tmp folder ..."
+            execute('rm -rf /tmp/userPlugin')
             println "All done!"
         }
     }
