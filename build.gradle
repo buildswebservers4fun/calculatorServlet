@@ -11,6 +11,7 @@ apply plugin: 'jacoco'
 apply plugin: 'application'
 
 group 'edu.rosehulman.csse477.buildswebservers4fun'
+mainClassName = "Library"
 
 if (System.getenv("CI_BUILD_TAG") != null) {
     version = "${System.getenv("CI_BUILD_TAG")}"
