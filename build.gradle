@@ -11,7 +11,7 @@ apply plugin: 'jacoco'
 apply plugin: 'application'
 
 group 'edu.rosehulman.csse477.buildswebservers4fun'
-mainClassName = "calculatorHandlers.CalculatorServlet"
+mainClassName = "calculatorHandlers.CalculatorPluginLoader"
 
 if (System.getenv("CI_BUILD_TAG") != null) {
     version = "${System.getenv("CI_BUILD_TAG")}"
