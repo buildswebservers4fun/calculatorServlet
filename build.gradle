@@ -186,9 +186,9 @@ task publishToProd(dependsOn: jar) << {
                 remove '/home/csse/webserver/plugins/calculatorServlet-*.jar'
             } catch(Exception) {}
             println "Copying data from the temp folder to the plugin folder ..."
-            execute('cp /tmp/userPlugin/* /home/csse/webserver/plugins', pty: true)
+            execute('cp /tmp/calculatorPlugin/* /home/csse/webserver/plugins', pty: true)
             println "Done! Clearing the tmp folder ..."
-            execute('rm -rf /tmp/userPlugin')
+            execute('rm -rf /tmp/calculatorPlugin')
             println "All done!"
         }
     }
